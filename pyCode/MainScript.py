@@ -2,16 +2,17 @@ print("Loading modules")
 import os
 import sys
 import datetime
+import random
+
 import pandas as pd
 from scipy.io import loadmat
 import numpy as np
-import random
 import matplotlib.pyplot as plt
-
+import arrow  # for easier datetimes
 
 # Retrieve current working directory (`cwd`)
 cwd = os.getcwd()
-print (cwd)
+print(cwd)
 print(sys.version)
 
 print("Loading Land Use")
@@ -23,7 +24,7 @@ df = LU_cat_xl.parse(sheet_name=LU_cat_xl.sheet_names[0],header=0,names=None,ind
 
 earliest_data_year = 1945
 latest_data_year = 2050
-min_year = datetime.datetime.now().year
+min_year = earliest_data_year  # datetime.datetime.now().year
 time_range = 105
 max_year = min_year + time_range
 
@@ -53,11 +54,11 @@ Data = loadmat('../Local/data4python.mat')
 Data1 = loadmat('../Local/URFdata.mat')
 
 LUmaps = {}
-for i in range(1945, 2006, 15):
+for i in range(earliest_data_year, 2006, 15):
 	LUmaps[i] = Data['LU' + str(i)]
 
 Ngw = {}
-for i in range(1945,2051,15):
+for i in range(earliest_data_year,2051,15):
 	Ngw[i] = Data['Ngw' + str(i)]
 
 LUcat = Data['LUcat']
@@ -74,104 +75,122 @@ print(len(urfs))
 del Data
 del Data1
 
-LF_base = np.empty((len(urfs), 105))
-LF_red = np.empty((len(urfs), 105))
+lf_base = np.empty((len(urfs), time_range))
+lf_red = np.empty((len(urfs), time_range))  # empties to get passed into the functions
 
-# Build Loading Functions
-print('Building Loading Functions...')
-for i in range(0,1000,1):  #len(urfs)
-	#print(i)
-	# For each loading function we want to build
-	# We will loop through the time snapshots of land use and Ngw ( every 15 years)
-	# We will extract a value at the start of the period and a value at the end of the period
-	# We will also extract the land use id at the start of the period and at the end
+def build_loading_functions(LF_base, LF_red):
+	# Build Loading Functions
+	print('Building Loading Functions...')
+	for i in range(len(urfs)):  #len(urfs)
+		if i % 1000 == 0:
+			print(i)
 
-	# loading function counter
-	lfi = 0
+		# For each loading function we want to build
+		# We will loop through the time snapshots of land use and Ngw ( every 15 years)
+		# We will extract a value at the start of the period and a value at the end of the period
+		# We will also extract the land use id at the start of the period and at the end
 
-	for k in range(earliest_data_year,latest_data_year,15): # This will loop through the 2035
-		#print('--------' + str(k) + '------------')
-		I = Sij[i][0]
-		J = Sij[i][1]
-		val_start = Ngw[k][I][J]
-		val_end = Ngw[k+15][I][J]
+		# loading function counter
+		lfi = 0
 
-		#print('V start ' + str(val_start) + ' ' + ' V end ' + str(val_end))
+		for k in range(earliest_data_year,latest_data_year,15): # This will loop through the 2035
+			#print('--------' + str(k) + '------------')
+			I = Sij[i][0]
+			J = Sij[i][1]
+			val_start = Ngw[k][I][J]
+			val_end = Ngw[k+15][I][J]
 
-
-		# klu is the index for the land use. After 2005 we use the 2005 land use map
-		klu_s = k
-		klu_e = k + 15
-		if k > 1990:
-			klu_s = 2005
-			klu_e = 2005
-
-		lu_s = LUmaps[klu_s][I][J]
-		lu_e = LUmaps[klu_e][I][J]
-		#print('klu start ' + str(klu_s) + ' ' + ' klu end ' + str(klu_e))
-		#print('LU start ' + str(lu_s) + ' ' + ' LU end ' + str(lu_e))
-
-		# find out the user defined reduction for the land use categories at the start and end of the current
-		# 15 year period (lu_s and lu_e)
-		ind = df.loc[df['DWR/CAML Code'] == lu_s]
-		# initialize reduction values to no reduction
-		red_s = 1
-		red_e = 1
-		if len(ind) > 0:
-			red_s = Perc_reduc[ind.index[0]]/100
-
-		ind = df.loc[df['DWR/CAML Code'] == lu_e]
-		if len(ind) > 0:
-			red_e = Perc_reduc[ind.index[0]]/100
-
-		#print('red start ' + str(red_s) + ' ' + ' red end ' + str(red_e))
-
-		# distribute the loading function
-		lf_base_temp = np.linspace(val_start, val_end, num=15)
+			#print('V start ' + str(val_start) + ' ' + ' V end ' + str(val_end))
 
 
-		lf_red_temp = np.linspace(val_start*red_s, val_end*red_e, num=15)
-		#print(lf_red_temp)
-		for t in range(0,15,1):
-			LF_base[i,lfi] = lf_base_temp[t]
-			LF_red[i,lfi] = lf_red_temp[t]
-			lfi += 1
-		#print(lfi)
+			# klu is the index for the land use. After 2005 we use the 2005 land use map
+			klu_s = k
+			klu_e = k + 15
+			if k > 1990:
+				klu_s = 2005
+				klu_e = 2005
 
-	#print(LF_base[i,:])
+			lu_s = LUmaps[klu_s][I][J]
+			lu_e = LUmaps[klu_e][I][J]
+			#print('klu start ' + str(klu_s) + ' ' + ' klu end ' + str(klu_e))
+			#print('LU start ' + str(lu_s) + ' ' + ' LU end ' + str(lu_e))
 
+			# find out the user defined reduction for the land use categories at the start and end of the current
+			# 15 year period (lu_s and lu_e)
+			ind = df.loc[df['DWR/CAML Code'] == lu_s]
+			# initialize reduction values to no reduction
+			red_s = 1
+			red_e = 1
+			if len(ind) > 0:
+				red_s = Perc_reduc[ind.index[0]]/100
 
-# Plot and convolute URF with LF
+			ind = df.loc[df['DWR/CAML Code'] == lu_e]
+			if len(ind) > 0:
+				red_e = Perc_reduc[ind.index[0]]/100
 
-for i in range(0,10,1):
-	r = random.randint(0,1000) #len(LF_base)
-	print("r: {}".format(r))
-	plt.plot(range(1945,2050,1),LF_base[r,:], 'b', range(1945,2050,1),LF_red[r,:], 'r')
-	plt.legend(('Base LF', 'Reduced LF'), loc='upper left', shadow=True)
-	plt.ylabel('Loading function')
-	plt.ylabel('Time')
-	plt.show()
+			#print('red start ' + str(red_s) + ' ' + ' red end ' + str(red_e))
 
-	# convolute URFs with LFs
-	btc_base = np.zeros(time_range)
-	btc_red = np.zeros(time_range)
-	for ii in range(0,time_range,1): 
-		for jj in range(ii,time_range,1):  # should basically accumulate from all years from current (ii) into future
-			btc_base[jj] += urfs[r, jj-ii] * LF_base[r, ii]
-			btc_red[jj] += urfs[r, jj-ii] * LF_red[r, ii]
-		print("	ii: {}".format(ii))
-		
-	#btc_base2 = np.zeros(time_range)
-	#btc_red2 = np.zeros(time_range)
-	#btc_base2 += numpy.sum.reduceat(urfs[r],  
-
-	plt.plot(range(1945, 2050, 1), btc_base, 'b', range(1945, 2050, 1), btc_red, 'r')
-	plt.show()
+			# distribute the loading function
+			lf_base_temp = np.linspace(val_start, val_end, num=15)
 
 
+			lf_red_temp = np.linspace(val_start*red_s, val_end*red_e, num=15)
+			#print(lf_red_temp)
+			for t in range(0,15,1):
+				LF_base[i,lfi] = lf_base_temp[t]
+				LF_red[i,lfi] = lf_red_temp[t]
+				lfi += 1
+			#print(lfi)
+
+		#print(LF_base[i,:])
+	return LF_base, LF_red
+
+
+def plot_and_convolute(LF_base, LF_red):
+	# Plot and convolute URF with LF
+	for i in range(0,10,1):
+		print(i)
+		r = random.randint(0,len(LF_base)) #len(LF_base)
+		plt.plot(range(1945,2050,1),LF_base[r,:], 'b', range(1945,2050,1),LF_red[r,:], 'r')
+		plt.legend(('Base LF', 'Reduced LF'), loc='upper left', shadow=True)
+		plt.ylabel('Loading function')
+		plt.ylabel('Time')
+		plt.show()
+
+		# convolute URFs with LFs
+		btc_base = np.zeros(time_range)
+		btc_red = np.zeros(time_range)
+		for ii in range(0,time_range,1):
+			for jj in range(ii,time_range,1):  # should basically accumulate from all years from current (ii) into future
+				btc_base[jj] += urfs[r, jj-ii] * LF_base[r, ii]
+				btc_red[jj] += urfs[r, jj-ii] * LF_red[r, ii]
+
+		#btc_base2 = np.zeros(time_range)
+		#btc_red2 = np.zeros(time_range)
+		#btc_base2 += numpy.sum.reduceat(urfs[r],
+
+		plt.plot(range(min_year, max_year, 1), btc_base, 'b', range(min_year, max_year, 1), btc_red, 'r')
+		plt.show()
+
+if __name__ == "__main__":
+	start_time = arrow.utcnow()
+	LF_base, LF_red = build_loading_functions(lf_base, lf_red)
+
+	print("Building loading functions")
+	mid_time = arrow.utcnow()
+	duration = mid_time - start_time
+	mid_seconds = duration.seconds
+	print("Loading function build duration: {}".format(mid_seconds))
+
+	print("Convoluting")
+	plot_and_convolute(LF_base, LF_red)
+	end_time = arrow.utcnow()
+	duration = end_time - mid_time
+	end_seconds = duration.seconds
+	print("convolution duration: {}".format(end_seconds))
 
 # How to index this dictionary
-print(Ngw[1945][6200,2876])
+# print(Ngw[1945][6200,2876])
 
 
 

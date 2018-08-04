@@ -25,3 +25,4 @@
 /pyCode/*
 #Un-ignore the source code
 !/pyCode/*.py
+!/pyCode/requirements.txt
